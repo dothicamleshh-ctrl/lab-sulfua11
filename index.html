@@ -447,22 +447,26 @@
                 </div>
 
                 <!-- Stats Grid -->
-                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
                     <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
                         <div class="text-slate-400 text-xs mb-1">Tổng số HS</div>
                         <div class="text-white font-orbitron font-bold text-xl" id="statTotalStudents">0</div>
                     </div>
                     <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
-                        <div class="text-slate-400 text-xs mb-1">Đội Núi Lửa</div>
+                        <div class="text-slate-400 text-xs mb-1">🌋 Đội Núi lửa</div>
                         <div class="text-amber-400 font-orbitron font-bold text-xl" id="statTeamVolcano">0 HS</div>
                     </div>
                     <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
-                        <div class="text-slate-400 text-xs mb-1">Đội Diêm</div>
+                        <div class="text-slate-400 text-xs mb-1">🔥 Đội Diêm</div>
                         <div class="text-rose-400 font-orbitron font-bold text-xl" id="statTeamMatch">0 HS</div>
                     </div>
                     <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
-                        <div class="text-slate-400 text-xs mb-1">Đội Cao Su / ĐS</div>
-                        <div class="text-cyan-400 font-orbitron font-bold text-xl" id="statTeamOthers">0 HS</div>
+                        <div class="text-slate-400 text-xs mb-1">🛞 Đội Cao su</div>
+                        <div class="text-cyan-400 font-orbitron font-bold text-xl" id="statTeamRubber">0 HS</div>
+                    </div>
+                    <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
+                        <div class="text-slate-400 text-xs mb-1">🚆 Đội Đường sắt</div>
+                        <div class="text-sky-400 font-orbitron font-bold text-xl" id="statTeamRail">0 HS</div>
                     </div>
                 </div>
 
@@ -1384,10 +1388,13 @@
                 else if (action === 'resume') data.status = 'playing';
                 else if (action === 'end') data.status = 'ended';
                 else if (action === 'restart') {
-                    // Tạo vòng mới mà KHÔNG xóa dữ liệu cũ khỏi Firestore.
-                    // Dữ liệu cũ vẫn được giữ lại, nhưng Dashboard chỉ hiển thị roundId hiện tại.
+                    const confirmed = confirm('Bắt đầu một vòng mới cho tất cả học sinh? Điểm vòng cũ sẽ được giữ lại và không hiển thị trong vòng mới.');
+                    if (!confirmed) return;
+                    // Tạo vòng mới, KHÔNG xóa dữ liệu cũ khỏi Firestore.
+                    // Dashboard và HS chỉ làm việc với roundId mới.
+                    currentRoundId = 'round_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
                     data.status = 'waiting';
-                    data.roundId = 'round_' + Date.now();
+                    data.roundId = currentRoundId;
                     data.restartAt = new Date().toISOString();
                 } else {
                     return;
@@ -1463,7 +1470,8 @@
             const total = students.length;
             let volcanoCount = 0;
             let matchCount = 0;
-            let othersCount = 0;
+            let rubberCount = 0;
+            let railCount = 0;
 
             const teamScores = {
                 'Núi lửa': { score: 0, count: 0 },
@@ -1475,7 +1483,8 @@
             students.forEach(st => {
                 if (st.team === 'Núi lửa') volcanoCount++;
                 else if (st.team === 'Diêm') matchCount++;
-                else othersCount++;
+                else if (st.team === 'Cao su') rubberCount++;
+                else if (st.team === 'Đường sắt') railCount++;
 
                 if (teamScores[st.team]) {
                     teamScores[st.team].score += (st.score || 0);
@@ -1483,12 +1492,11 @@
                 }
             });
 
-            othersCount = total - volcanoCount - matchCount;
-
             document.getElementById('statTotalStudents').innerText = total;
             document.getElementById('statTeamVolcano').innerText = `${volcanoCount} HS`;
             document.getElementById('statTeamMatch').innerText = `${matchCount} HS`;
-            document.getElementById('statTeamOthers').innerText = `${othersCount} HS`;
+            document.getElementById('statTeamRubber').innerText = `${rubberCount} HS`;
+            document.getElementById('statTeamRail').innerText = `${railCount} HS`;
 
             const sortedTeams = Object.keys(teamScores).map(team => ({
                 team,
