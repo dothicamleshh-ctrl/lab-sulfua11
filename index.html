@@ -1,0 +1,1579 @@
+<!DOCTYPE html>
+<html lang="vi" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thoát Khởi Phòng Thí Nghiệm – Sulfua – Hóa Học 11 (Realtime Multiplayer)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome CDN -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter & Orbitron -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        orbitron: ['Orbitron', 'sans-serif'],
+                    },
+                    colors: {
+                        labBlue: '#0284c7',
+                        labDark: '#0f172a',
+                        labCard: '#1e293b',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #090d16;
+            color: #f8fafc;
+        }
+        .glow-blue {
+            box-shadow: 0 0 20px rgba(2, 132, 199, 0.4);
+        }
+        .glow-red {
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+        }
+        .glow-yellow {
+            box-shadow: 0 0 20px rgba(234, 179, 8, 0.4);
+        }
+        @keyframes pulseGlow {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.8; transform: scale(1.02); }
+        }
+        .animate-pulse-glow {
+            animation: pulseGlow 2s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col selection:bg-cyan-500 selection:text-white overflow-x-hidden">
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        window.firebaseAppModules = {
+            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
+            getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, getDocs
+        };
+        
+        window.dispatchEvent(new Event('firebase-loaded'));
+    </script>
+
+    <script>
+        class SoundFX {
+            constructor() {
+                this.ctx = null;
+                this.muted = false;
+            }
+            init() {
+                if (!this.ctx) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    this.ctx = new AudioContext();
+                }
+                if (this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+            playBeep(freq, type, duration) {
+                if (this.muted) return;
+                this.init();
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                    gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + duration);
+                } catch(e) { console.log(e); }
+            }
+            correct() {
+                if (this.muted) return;
+                this.init();
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(440, now);
+                osc.frequency.setValueAtTime(554.37, now + 0.1);
+                osc.frequency.setValueAtTime(659.25, now + 0.2);
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.5);
+            }
+            incorrect() {
+                if (this.muted) return;
+                this.init();
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(180, now);
+                osc.frequency.setValueAtTime(130, now + 0.15);
+                gain.gain.setValueAtTime(0.2, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.4);
+            }
+            unlock() {
+                if (this.muted) return;
+                this.init();
+                const now = this.ctx.currentTime;
+                [523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+                    gain.gain.setValueAtTime(0.2, now + idx * 0.08);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.3);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + idx * 0.08);
+                    osc.stop(now + idx * 0.08 + 0.3);
+                });
+            }
+            victory() {
+                if (this.muted) return;
+                this.init();
+                const notes = [523.25, 523.25, 523.25, 659.25, 783.99, 1046.50];
+                const times = [0, 0.2, 0.4, 0.6, 0.8, 1.2];
+                const durations = [0.15, 0.15, 0.15, 0.15, 0.3, 0.6];
+                notes.forEach((freq, i) => {
+                    const now = this.ctx.currentTime + times[i];
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(freq, now);
+                    gain.gain.setValueAtTime(0.15, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + durations[i]);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + durations[i]);
+                });
+            }
+        }
+        const sfx = new SoundFX();
+    </script>
+
+    <header class="bg-slate-900/90 backdrop-blur border-b border-slate-800 sticky top-0 z-50 px-4 py-3">
+        <div class="max-w-4xl mx-auto flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+                <div class="bg-cyan-500/20 text-cyan-400 p-2 rounded-xl border border-cyan-500/30 flex items-center justify-center">
+                    <i class="fa-solid fa-flask-vial text-xl animate-pulse"></i>
+                </div>
+                <div>
+                    <h1 class="font-orbitron font-bold text-sm sm:text-base text-cyan-400 tracking-wider">LAB SULFUA 11</h1>
+                    <p class="text-xs text-slate-400" id="headerSubTitle">Realtime Multiplayer Escape Room</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center space-x-2">
+                <button onclick="toggleAudio()" id="audioBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-xl text-sm border border-slate-700 flex items-center gap-1.5 transition">
+                    <i class="fa-solid fa-volume-high text-cyan-400"></i>
+                    <span class="hidden sm:inline">Âm thanh</span>
+                </button>
+                <button onclick="openShareModal()" class="bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 px-3 py-2 rounded-xl text-sm border border-cyan-500/40 flex items-center gap-1.5 transition font-medium">
+                    <i class="fa-solid fa-link"></i>
+                    <span>Link Vào Nhanh</span>
+                </button>
+                <button onclick="openDashboard()" class="bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 px-3 py-2 rounded-xl text-sm border border-amber-500/40 flex items-center gap-1.5 transition font-medium">
+                    <i class="fa-solid fa-chart-pie"></i>
+                    <span>GV Dashboard</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-4xl w-full mx-auto p-4 flex flex-col justify-center">
+
+        <!-- SCREEN: LOGIN -->
+        <div id="screen-login" class="bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl">
+            <div class="text-center mb-6">
+                <div class="inline-block p-4 bg-gradient-to-br from-cyan-500/20 to-blue-600/20 rounded-3xl border border-cyan-500/30 mb-3">
+                    <i class="fa-solid fa-radiation text-4xl text-cyan-400 animate-spin" style="animation-duration: 12s;"></i>
+                </div>
+                <h2 class="font-orbitron font-extrabold text-xl sm:text-2xl text-white mb-2">THOÁT KHỎI PHÒNG THÍ NGHIỆM</h2>
+                <p class="text-slate-400 text-sm">Học sinh không cần tải gì cả – Nhập tên và tham gia ngay!</p>
+            </div>
+
+            <form id="loginForm" onsubmit="handleLogin(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">
+                        <i class="fa-solid fa-key text-cyan-400 mr-1"></i> Mã phiên game (Session ID):
+                    </label>
+                    <input type="text" id="sessionIdInput" required value="CLASS11A" 
+                        class="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 font-mono uppercase text-sm">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">
+                        <i class="fa-solid fa-user-graduate text-cyan-400 mr-1"></i> Họ và tên học sinh:
+                    </label>
+                    <input type="text" id="studentName" required placeholder="Ví dụ: Nguyễn Văn A" 
+                        class="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 text-sm">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">
+                        <i class="fa-solid fa-people-group text-cyan-400 mr-1"></i> Chọn đội chơi của bạn:
+                    </label>
+                    <div class="grid grid-cols-2 gap-2.5">
+                        <label class="team-card cursor-pointer border border-slate-700 hover:border-cyan-500 bg-slate-950/60 rounded-xl p-3 flex flex-col items-center justify-center transition text-center relative group">
+                            <input type="radio" name="team" value="Núi lửa" required class="absolute top-2 right-2 accent-cyan-500">
+                            <span class="text-2xl mb-1 group-hover:scale-110 transition">🌋</span>
+                            <span class="font-bold text-white text-xs">Núi lửa</span>
+                        </label>
+                        <label class="team-card cursor-pointer border border-slate-700 hover:border-cyan-500 bg-slate-950/60 rounded-xl p-3 flex flex-col items-center justify-center transition text-center relative group">
+                            <input type="radio" name="team" value="Diêm" class="absolute top-2 right-2 accent-cyan-500">
+                            <span class="text-2xl mb-1 group-hover:scale-110 transition">🔥</span>
+                            <span class="font-bold text-white text-xs">Diêm</span>
+                        </label>
+                        <label class="team-card cursor-pointer border border-slate-700 hover:border-cyan-500 bg-slate-950/60 rounded-2xl p-3 flex flex-col items-center justify-center transition text-center relative group">
+                            <input type="radio" name="team" value="Cao su" class="absolute top-2 right-2 accent-cyan-500">
+                            <span class="text-2xl mb-1 group-hover:scale-110 transition">🛞</span>
+                            <span class="font-bold text-white text-xs">Cao su</span>
+                        </label>
+                        <label class="team-card cursor-pointer border border-slate-700 hover:border-cyan-500 bg-slate-950/60 rounded-2xl p-3 flex flex-col items-center justify-center transition text-center relative group">
+                            <input type="radio" name="team" value="Đường sắt" class="absolute top-2 right-2 accent-cyan-500">
+                            <span class="text-2xl mb-1 group-hover:scale-110 transition">🚆</span>
+                            <span class="font-bold text-white text-xs">Đường sắt</span>
+                        </label>
+                    </div>
+                </div>
+
+                <button type="submit" class="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold py-3.5 px-6 rounded-2xl shadow-lg shadow-cyan-500/25 transition transform active:scale-98 flex items-center justify-center gap-2 text-sm">
+                    <span>VÀO PHÒNG THÍ NGHIỆM</span>
+                    <i class="fa-solid fa-arrow-right-to-bracket"></i>
+                </button>
+            </form>
+        </div>
+
+        <!-- SCREEN: WAITING -->
+        <div id="screen-waiting" class="hidden bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-3xl p-8 shadow-2xl text-center space-y-5">
+            <div class="inline-block p-4 bg-amber-500/20 rounded-3xl border border-amber-500/30 text-amber-400 text-4xl animate-bounce">
+                <i class="fa-solid fa-hourglass-start"></i>
+            </div>
+            <h2 class="font-orbitron font-bold text-xl text-white">ĐANG CHỜ GIÁO VIÊN BẮT ĐẦU PHIÊN...</h2>
+            <p class="text-slate-300 text-sm max-w-sm mx-auto">
+                Bạn đã vào phòng thành công với tên <strong id="waitName" class="text-cyan-400"></strong> (Đội: <strong id="waitTeam" class="text-amber-400"></strong>). Hãy sẵn sàng, giáo viên sẽ kích hoạt game sớm!
+            </p>
+            <div class="pt-2 flex flex-col items-center gap-2">
+                <span class="inline-block px-4 py-2 bg-slate-950 rounded-xl border border-slate-800 text-xs text-slate-400 font-mono">
+                    Session ID: <span id="waitSessionId" class="text-cyan-400 font-bold"></span>
+                </span>
+                <button onclick="openShareModal()" class="text-xs text-cyan-400 hover:underline">
+                    <i class="fa-solid fa-share-nodes mr-1"></i> Bấm vào đây để lấy link gửi bạn bè cùng chơi
+                </button>
+            </div>
+        </div>
+
+        <!-- SCREEN: GAMEPLAY -->
+        <div id="screen-game" class="hidden flex-col space-y-4">
+            
+            <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-lg">
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400 font-bold text-lg" id="hudAvatar">H</div>
+                    <div>
+                        <div class="font-bold text-white text-sm" id="hudName">Học sinh</div>
+                        <div class="text-xs text-cyan-400 font-medium" id="hudTeam">Đội: Núi lửa</div>
+                    </div>
+                </div>
+                
+                <div class="flex items-center space-x-4">
+                    <div class="text-center bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800">
+                        <div class="text-[10px] text-slate-400 uppercase tracking-wider">Phòng</div>
+                        <div class="font-bold text-cyan-400 text-sm" id="hudRoom">Phòng 1/4</div>
+                    </div>
+                    <div class="text-center bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800">
+                        <div class="text-[10px] text-slate-400 uppercase tracking-wider">Điểm</div>
+                        <div class="font-bold text-amber-400 text-sm" id="hudScore">0</div>
+                    </div>
+                    <div class="text-center bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800">
+                        <div class="text-[10px] text-slate-400 uppercase tracking-wider">Thời gian</div>
+                        <div class="font-bold text-emerald-400 text-sm font-mono" id="hudTimer">15:00</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- KEYS COLLECTION BAR -->
+            <div class="bg-slate-900/70 border border-slate-800/80 rounded-2xl p-3 sm:p-4 space-y-2">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Bộ sưu tập chìa khóa (Mật mã các phòng):</span>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                    <div class="key-slot flex items-center gap-2 bg-slate-950 px-3 py-2 rounded-xl border border-slate-800 opacity-40 text-xs transition" id="key1">
+                        <span class="text-base">🔒</span> 
+                        <div class="overflow-hidden">
+                            <div class="font-bold text-white truncate">Phòng 1 (Z)</div>
+                            <div class="text-[10px] text-slate-400 truncate" id="keyText1">Chưa nhận</div>
+                        </div>
+                    </div>
+                    <div class="key-slot flex items-center gap-2 bg-slate-950 px-3 py-2 rounded-xl border border-slate-800 opacity-40 text-xs transition" id="key2">
+                        <span class="text-base">🔒</span> 
+                        <div class="overflow-hidden">
+                            <div class="font-bold text-white truncate">Phòng 2 (e⁻)</div>
+                            <div class="text-[10px] text-slate-400 truncate" id="keyText2">Chưa nhận</div>
+                        </div>
+                    </div>
+                    <div class="key-slot flex items-center gap-2 bg-slate-950 px-3 py-2 rounded-xl border border-slate-800 opacity-40 text-xs transition" id="key3">
+                        <span class="text-base">🔒</span> 
+                        <div class="overflow-hidden">
+                            <div class="font-bold text-white truncate">Phòng 3 (Vai trò)</div>
+                            <div class="text-[10px] text-slate-400 truncate" id="keyText3">Chưa nhận</div>
+                        </div>
+                    </div>
+                    <div class="key-slot flex items-center gap-2 bg-slate-950 px-3 py-2 rounded-xl border border-slate-800 opacity-40 text-xs transition" id="keyFinal">
+                        <span class="text-base">🔒</span> 
+                        <div class="overflow-hidden">
+                            <div class="font-bold text-white truncate">Phòng 4 (Két sắt)</div>
+                            <div class="text-[10px] text-slate-400 truncate" id="keyTextFinal">Chưa nhận</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DYNAMIC ROOM CONTAINER -->
+            <div id="roomContainer" class="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative">
+                <!-- Room content injected via JavaScript -->
+            </div>
+
+        </div>
+
+    </main>
+
+    <div id="shareModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full flex flex-col shadow-2xl overflow-hidden p-6 text-center space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 class="font-orbitron font-bold text-white text-base flex items-center gap-2">
+                    <i class="fa-solid fa-link text-cyan-400"></i> Link Vào Nhanh Cho Học Sinh
+                </h3>
+                <button onclick="closeShareModal()" class="text-slate-400 hover:text-white p-2">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <p class="text-xs text-slate-300">
+                Học sinh chỉ cần bấm vào đường dẫn bên dưới trên điện thoại để tham gia ngay lập tức (không cần cài đặt gì thêm):
+            </p>
+
+            <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3">
+                <div class="text-xs text-slate-400">Đường dẫn tham gia (Direct Link):</div>
+                <div class="flex items-center gap-2">
+                    <input type="text" id="shareUrlDisplay" readonly class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-cyan-300 font-mono select-all">
+                    <button onclick="copyShareUrl()" class="bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition shrink-0 flex items-center gap-1">
+                        <i class="fa-solid fa-copy"></i> Sao chép
+                    </button>
+                </div>
+                <div class="pt-1 flex items-center justify-between text-xs text-slate-400 border-t border-slate-800/80 pt-2">
+                    <span>Mã phiên game hiện tại:</span>
+                    <span id="currentModalSessionId" class="font-mono font-bold text-amber-400 text-sm">CLASS11A</span>
+                </div>
+            </div>
+
+            <div class="flex gap-2">
+                <a id="whatsappShareBtn" href="#" target="_blank" class="flex-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/40 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5">
+                    <i class="fa-brands fa-whatsapp text-sm"></i> Gửi qua Zalo/Chat
+                </a>
+                <button onclick="closeShareModal()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-white py-2.5 rounded-xl text-xs font-bold transition">
+                    Đã hiểu
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TEACHER DASHBOARD MODAL -->
+    <div id="dashboardModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/40">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-chalkboard-user text-amber-400 text-lg"></i>
+                    <h3 class="font-orbitron font-bold text-white text-base">ĐIỀU KHIỂN GIÁO VIÊN & DASHBOARD REALTIME</h3>
+                </div>
+                <button onclick="closeDashboard()" class="text-slate-400 hover:text-white p-2">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="p-6 overflow-y-auto space-y-6">
+                <!-- Session & Link Quick Section -->
+                <div class="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div class="space-y-1 text-center sm:text-left flex-1">
+                        <div class="text-xs text-slate-400">Mã phiên hiện tại: <span id="dashSessionId" class="text-cyan-400 font-bold font-mono text-sm">CLASS11A</span></div>
+                        <div class="text-xs text-slate-300">Gửi link trực tiếp cho học sinh vào chơi ngay:</div>
+                        <button onclick="openShareModal(); closeDashboard();" class="mt-2 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-400 border border-cyan-500/40 px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 inline-flex">
+                            <i class="fa-solid fa-link"></i> Lấy Link Chia Sẻ Cho HS
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Controls bar -->
+                <div class="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center space-x-2 flex-wrap gap-y-2">
+                        <button id="btnTeacherStart" onclick="teacherAction('start')" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-play"></i> Bắt đầu
+                        </button>
+                        <button id="btnTeacherPause" onclick="teacherAction('pause')" class="bg-amber-600 hover:bg-amber-500 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-pause"></i> Tạm dừng
+                        </button>
+                        <button id="btnTeacherResume" onclick="teacherAction('resume')" class="bg-cyan-600 hover:bg-cyan-500 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-forward"></i> Tiếp tục
+                        </button>
+                        <button id="btnTeacherRestart" onclick="teacherAction('restart')" class="bg-rose-600 hover:bg-rose-500 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5">
+                            <i class="fa-solid fa-rotate-right"></i> Chơi lại
+                        </button>
+                        <button id="btnTeacherEnd" onclick="teacherAction('end')" class="bg-slate-800 hover:bg-slate-700 text-rose-400 px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-rose-500/30">
+                            <i class="fa-solid fa-flag-checkered"></i> Kết thúc
+                        </button>
+                    </div>
+                    <div class="text-xs text-emerald-400 font-medium flex items-center gap-1">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Realtime Active
+                    </div>
+                </div>
+
+                <!-- Stats Grid -->
+                <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                    <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
+                        <div class="text-slate-400 text-xs mb-1">Tổng số HS</div>
+                        <div class="text-white font-orbitron font-bold text-xl" id="statTotalStudents">0</div>
+                    </div>
+                    <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
+                        <div class="text-slate-400 text-xs mb-1">🌋 Đội Núi lửa</div>
+                        <div class="text-amber-400 font-orbitron font-bold text-xl" id="statTeamVolcano">0 HS</div>
+                    </div>
+                    <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
+                        <div class="text-slate-400 text-xs mb-1">🔥 Đội Diêm</div>
+                        <div class="text-rose-400 font-orbitron font-bold text-xl" id="statTeamMatch">0 HS</div>
+                    </div>
+                    <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
+                        <div class="text-slate-400 text-xs mb-1">🛞 Đội Cao su</div>
+                        <div class="text-cyan-400 font-orbitron font-bold text-xl" id="statTeamRubber">0 HS</div>
+                    </div>
+                    <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
+                        <div class="text-slate-400 text-xs mb-1">🚆 Đội Đường sắt</div>
+                        <div class="text-sky-400 font-orbitron font-bold text-xl" id="statTeamRail">0 HS</div>
+                    </div>
+                </div>
+
+                <!-- Team Rankings -->
+                <div>
+                    <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Xếp hạng các đội Realtime</h4>
+                    <div class="space-y-2" id="teamRankingsContainer">
+                        <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-center text-slate-400 text-xs">Đang tải dữ liệu đội...</div>
+                    </div>
+                </div>
+
+                <!-- Top Students -->
+                <div>
+                    <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Top Học Sinh Xuất Sắc</h4>
+                    <div class="space-y-2 max-h-48 overflow-y-auto" id="topStudentsContainer">
+                        <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-center text-slate-400 text-xs">Chưa có học sinh nào hoàn thành.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="fixed bottom-6 right-6 z-50 transform translate-y-32 opacity-0 transition-all duration-300 max-w-sm w-full mx-4">
+        <div id="toastContent" class="bg-slate-900 border border-slate-700 p-4 rounded-2xl shadow-2xl flex items-center space-x-3">
+            <div id="toastIcon" class="text-2xl">✨</div>
+            <div>
+                <h4 id="toastTitle" class="font-bold text-white text-sm">Thông báo</h4>
+                <p id="toastMsg" class="text-xs text-slate-300">Nội dung thông báo...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Firebase configuration provided by user
+        const firebaseConfig = {
+            apiKey: "AIzaSyA-FAL8tRm0pzleBHiq-lMePRuQfTkJWL8",
+            authDomain: "sulfua-escape-room.firebaseapp.com",
+            projectId: "sulfua-escape-room",
+            storageBucket: "sulfua-escape-room.firebasestorage.app",
+            messagingSenderId: "978295817339",
+            appId: "1:978295817339:web:85dd3da82127d644148ede",
+            measurementId: "G-51GB8T1FE1"
+        };
+
+        const appId = 'sulfur-escape-room-v1';
+        let db = null;
+        let auth = null;
+        let userId = null;
+
+        let gameState = {
+            sessionId: 'CLASS11A',
+            playerId: 'player_' + Math.random().toString(36).substring(2, 9),
+            name: '',
+            team: '',
+            score: 0,
+            currentRoom: 1,
+            keys: { 1: false, 2: false, 3: false, final: false },
+            clues: { 1: '', 2: '', 3: '', 4: '' },
+            timeLeft: 300,
+            status: 'waiting'
+        };
+
+        let timerInterval = null;
+        let studentsUnsubscribe = null;
+        let sessionUnsubscribe = null;
+        let currentRoundId = 'initial';
+
+        window.addEventListener('firebase-loaded', async () => {
+            const cleanUrl = window.location.href.split('#')[0];
+            initShareUrl(cleanUrl);
+            checkUrlSessionParam();
+
+            if (!firebaseConfig) {
+                console.warn("Firebase config not available. Running in standalone mode.");
+                return;
+            }
+            try {
+                const mod = window.firebaseAppModules;
+                const app = mod.initializeApp(firebaseConfig);
+                db = mod.getFirestore(app);
+                auth = mod.getAuth(app);
+
+                await mod.signInAnonymously(auth);
+                userId = auth.currentUser ? auth.currentUser.uid : crypto.randomUUID();
+                gameState.playerId = userId;
+                console.log("Firebase authenticated successfully with provided config. UID:", userId);
+            } catch(err) {
+                console.error("Firebase init error:", err);
+            }
+        });
+
+        function checkUrlSessionParam() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const sParam = urlParams.get('session');
+            if (sParam) {
+                const upperS = sParam.toUpperCase();
+                gameState.sessionId = upperS;
+                document.getElementById('sessionIdInput').value = upperS;
+                document.getElementById('waitSessionId').innerText = upperS;
+                document.getElementById('dashSessionId').innerText = upperS;
+                document.getElementById('currentModalSessionId').innerText = upperS;
+                showToast(`Đã tự động nhận diện mã phòng: ${upperS}`, "🔗", "success");
+            }
+        }
+
+        function initShareUrl(baseUrl) {
+            const currentSession = document.getElementById('sessionIdInput').value.trim().toUpperCase() || 'CLASS11A';
+            const finalUrl = `${baseUrl}?session=${currentSession}`;
+            document.getElementById('shareUrlDisplay').value = finalUrl;
+            document.getElementById('whatsappShareBtn').href = `https://api.whatsapp.com/send?text=${encodeURIComponent('Tham gia phòng thí nghiệm Hóa 11 ngay: ' + finalUrl)}`;
+        }
+
+        function openShareModal() {
+            document.getElementById('shareModal').classList.remove('hidden');
+            const cleanUrl = window.location.href.split('#')[0].split('?')[0];
+            initShareUrl(cleanUrl);
+        }
+
+        function closeShareModal() {
+            document.getElementById('shareModal').classList.add('hidden');
+        }
+
+        function copyShareUrl() {
+            const copyText = document.getElementById('shareUrlDisplay');
+            copyText.select();
+            copyText.setSelectionRange(0, 99999);
+            document.execCommand('copy');
+            showToast("Đã sao chép liên kết vào clipboard!", "📋", "success");
+        }
+
+        function toggleAudio() {
+            sfx.muted = !sfx.muted;
+            const btn = document.getElementById('audioBtn');
+            if (sfx.muted) {
+                btn.innerHTML = `<i class="fa-solid fa-volume-xmark text-rose-400"></i><span class="hidden sm:inline">Tắt</span>`;
+                showToast("Đã tắt âm thanh", "🔊", "info");
+            } else {
+                btn.innerHTML = `<i class="fa-solid fa-volume-high text-cyan-400"></i><span class="hidden sm:inline">Âm thanh</span>`;
+                sfx.playBeep(440, 'sine', 0.1);
+                showToast("Đã bật âm thanh", "🔊", "success");
+            }
+        }
+
+        function showToast(message, icon = "✨", type = "success") {
+            const toast = document.getElementById('toast');
+            const toastTitle = document.getElementById('toastTitle');
+            const toastMsg = document.getElementById('toastMsg');
+            const toastIcon = document.getElementById('toastIcon');
+            const toastContent = document.getElementById('toastContent');
+
+            toastIcon.innerText = icon;
+            toastMsg.innerText = message;
+            toastTitle.innerText = type === 'success' ? 'Thành công!' : (type === 'error' ? 'Thử lại (-20đ)!' : 'Thông báo');
+
+            toastContent.className = type === 'success' 
+                ? "bg-slate-900 border border-cyan-500/50 p-4 rounded-2xl shadow-2xl flex items-center space-x-3 glow-blue"
+                : (type === 'error' ? "bg-slate-900 border border-rose-500/50 p-4 rounded-2xl shadow-2xl flex items-center space-x-3 glow-red" : "bg-slate-900 border border-amber-500/50 p-4 rounded-2xl shadow-2xl flex items-center space-x-3 glow-yellow");
+
+            toast.classList.remove('translate-y-32', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-32', 'opacity-0');
+            }, 3000);
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const sessionInput = document.getElementById('sessionIdInput').value.trim().toUpperCase();
+            const nameInput = document.getElementById('studentName').value.trim();
+            const teamInput = document.querySelector('input[name="team"]:checked');
+
+            if (!sessionInput || !nameInput || !teamInput) {
+                showToast("Vui lòng nhập đầy đủ thông tin!", "⚠️", "error");
+                return;
+            }
+
+            gameState.sessionId = sessionInput;
+            gameState.name = nameInput;
+            gameState.team = teamInput.value;
+            sfx.playBeep(600, 'sine', 0.2);
+
+            document.getElementById('hudAvatar').innerText = nameInput.charAt(0).toUpperCase();
+            document.getElementById('hudName').innerText = nameInput;
+            document.getElementById('hudTeam').innerText = `Đội: ${gameState.team}`;
+            document.getElementById('waitName').innerText = nameInput;
+            document.getElementById('waitTeam').innerText = gameState.team;
+            document.getElementById('waitSessionId').innerText = gameState.sessionId;
+            document.getElementById('dashSessionId').innerText = gameState.sessionId;
+            document.getElementById('currentModalSessionId').innerText = gameState.sessionId;
+            initShareUrl(window.location.href.split('#')[0].split('?')[0]);
+
+            await saveStudentDataToFirebase();
+            listenToSessionStatus();
+
+            document.getElementById('screen-login').classList.add('hidden');
+            document.getElementById('screen-waiting').classList.remove('hidden');
+            showToast("Đã vào phòng chờ phiên game!", "🧪", "success");
+        }
+
+        async function saveStudentDataToFirebase() {
+            if (!db) return;
+            try {
+                const mod = window.firebaseAppModules;
+                const studentRef = mod.doc(db, 'artifacts', appId, 'public', 'data', `session_${gameState.sessionId}_students`, gameState.playerId);
+                await mod.setDoc(studentRef, {
+                    playerId: gameState.playerId,
+                    name: gameState.name,
+                    team: gameState.team,
+                    score: gameState.score,
+                    currentRoom: gameState.currentRoom,
+                    keys: gameState.keys,
+                    clues: gameState.clues,
+                    roundId: currentRoundId,
+                    updatedAt: new Date().toISOString()
+                }, { merge: true });
+            } catch(e) {
+                console.error("Error saving student state:", e);
+            }
+        }
+
+        function listenToSessionStatus() {
+            if (!db) {
+                startGameplay();
+                return;
+            }
+            const mod = window.firebaseAppModules;
+            const sessionRef = mod.doc(db, 'artifacts', appId, 'public', 'data', 'sessions', gameState.sessionId);
+
+            if (sessionUnsubscribe) sessionUnsubscribe();
+
+            sessionUnsubscribe = mod.onSnapshot(sessionRef, (docSnap) => {
+                if (!docSnap.exists()) {
+                    mod.setDoc(sessionRef, {
+                        sessionId: gameState.sessionId,
+                        status: 'waiting',
+                        roundId: 'initial',
+                        createdAt: new Date().toISOString()
+                    }, { merge: true }).catch(() => {});
+                    return;
+                }
+
+                const data = docSnap.data();
+                const newRoundId = data.roundId || 'initial';
+                const mustReset = data.forceReset === true && data.restartAt;
+
+                if (currentRoundId !== newRoundId || mustReset) {
+                    currentRoundId = newRoundId;
+
+                    {
+                        gameState.score = 0;
+                        gameState.currentRoom = 1;
+                        gameState.keys = {1:false,2:false,3:false,final:false};
+                        gameState.clues = {1:'',2:'',3:'',4:''};
+                        gameState.timeLeft = 300;
+                        gameState.status = 'waiting';
+                        if (timerInterval) clearInterval(timerInterval);
+
+                        document.getElementById('screen-game').classList.add('hidden');
+                        document.getElementById('screen-game').classList.remove('flex');
+                        document.getElementById('screen-waiting').classList.remove('hidden');
+                        showToast("Lượt chơi mới đã sẵn sàng!", "🔄", "info");
+                        saveStudentDataToFirebase();
+                    }
+                }
+
+                if (data.status === 'playing' && !document.getElementById('screen-waiting').classList.contains('hidden')) {
+                    startGameplay();
+                } else if (data.status === 'paused') {
+                    showToast("Trò chơi đang bị tạm dừng bởi giáo viên.", "⏸️", "info");
+                } else if (data.status === 'ended') {
+                    showToast("Giáo viên đã kết thúc phiên game.", "🏁", "info");
+                }
+            }, (error) => {
+                console.error("Session listener error:", error);
+            });
+        }
+
+        function startGameplay() {
+            document.getElementById('screen-waiting').classList.add('hidden');
+            document.getElementById('screen-login').classList.add('hidden');
+            document.getElementById('screen-game').classList.remove('hidden');
+            document.getElementById('screen-game').classList.add('flex');
+
+            startTimer();
+            renderRoom();
+            showToast("Trò chơi bắt đầu! Chúc bạn vượt qua thử thách!", "🚀", "success");
+        }
+
+        function startTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                if (gameState.timeLeft > 0) {
+                    gameState.timeLeft--;
+                    let m = Math.floor(gameState.timeLeft / 60);
+                    let s = gameState.timeLeft % 60;
+                    document.getElementById('hudTimer').innerText = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                }
+            }, 1000);
+        }
+
+        function updateHUD() {
+            document.getElementById('hudRoom').innerText = `Phòng ${gameState.currentRoom}/4`;
+            document.getElementById('hudScore').innerText = gameState.score;
+
+            if (gameState.keys[1]) {
+                const k = document.getElementById('key1');
+                k.classList.remove('opacity-40');
+                k.classList.add('border-cyan-500', 'bg-cyan-950/40', 'glow-blue');
+                k.innerHTML = `<span class="text-base">🔑</span> <div class="overflow-hidden"><div class="font-bold text-cyan-300 truncate">Phòng 1: 16</div><div class="text-[10px] text-cyan-400 truncate">Đã thu thập</div></div>`;
+            }
+            if (gameState.keys[2]) {
+                const k = document.getElementById('key2');
+                k.classList.remove('opacity-40');
+                k.classList.add('border-cyan-500', 'bg-cyan-950/40', 'glow-blue');
+                k.innerHTML = `<span class="text-base">🔑</span> <div class="overflow-hidden"><div class="font-bold text-cyan-300 truncate">Phòng 2: 6</div><div class="text-[10px] text-cyan-400 truncate">Đã thu thập</div></div>`;
+            }
+            if (gameState.keys[3]) {
+                const k = document.getElementById('key3');
+                k.classList.remove('opacity-40');
+                k.classList.add('border-cyan-500', 'bg-cyan-950/40', 'glow-blue');
+                k.innerHTML = `<span class="text-base">🔑</span> <div class="overflow-hidden"><div class="font-bold text-cyan-300 truncate">Phòng 3: 2</div><div class="text-[10px] text-cyan-400 truncate">Đã thu thập</div></div>`;
+            }
+            if (gameState.keys.final) {
+                const k = document.getElementById('keyFinal');
+                k.classList.remove('opacity-40');
+                k.classList.add('border-amber-500', 'bg-amber-950/40', 'glow-yellow');
+                k.innerHTML = `<span class="text-base">🔑</span> <div class="overflow-hidden"><div class="font-bold text-amber-300 truncate">Phòng 4: 2</div><div class="text-[10px] text-amber-400 truncate">Đã thu thập</div></div>`;
+            }
+
+            saveStudentDataToFirebase();
+        }
+
+        function renderRoom() {
+            updateHUD();
+            const container = document.getElementById('roomContainer');
+            container.innerHTML = '';
+
+            if (gameState.currentRoom === 1) renderRoom1(container);
+            else if (gameState.currentRoom === 2) renderRoom2(container);
+            else if (gameState.currentRoom === 3) renderRoom3(container);
+            else if (gameState.currentRoom === 4) renderRoom4(container);
+        }
+
+        function renderRoom1(container) {
+            container.innerHTML = `
+                <div class="space-y-6">
+                    <div class="flex items-center space-x-3 border-b border-slate-800 pb-4">
+                        <div class="bg-cyan-500/20 p-3 rounded-2xl border border-cyan-500/30 text-cyan-400 text-xl">
+                            <i class="fa-solid fa-atom"></i>
+                        </div>
+                        <div>
+                            <span class="text-xs uppercase font-bold text-cyan-400 tracking-wider">Phòng 1 – Ổ Khóa Nguyên Tử</span>
+                            <h3 class="font-orbitron font-bold text-lg text-white">CHINH PHỤC SỐ HIỆU NGUYÊN TỬ</h3>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-950/60 p-4 sm:p-5 rounded-2xl border border-slate-800/80">
+                        <p class="text-slate-200 text-base font-medium mb-4">
+                            Sulfur có số hiệu nguyên tử Z = 16. Nguyên tử sulfur trung hòa có bao nhiêu electron?
+                        </p>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <button onclick="checkRoom1('A')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">A</span>
+                                <span class="font-medium text-slate-200">6 electron</span>
+                            </button>
+                            <button onclick="checkRoom1('B')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">B</span>
+                                <span class="font-medium text-slate-200">8 electron</span>
+                            </button>
+                            <button onclick="checkRoom1('C')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">C</span>
+                                <span class="font-medium text-slate-200">16 electron</span>
+                            </button>
+                            <button onclick="checkRoom1('D')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">D</span>
+                                <span class="font-medium text-slate-200">32 electron</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function checkRoom1(ans) {
+            if (ans === 'C') {
+                sfx.correct();
+                sfx.unlock();
+                gameState.score += 100;
+                gameState.keys[1] = true;
+                gameState.clues[1] = '16';
+                
+                const container = document.getElementById('roomContainer');
+                container.innerHTML = `
+                    <div class="text-center space-y-6 py-6 animate-pulse-glow">
+                        <div class="inline-block p-4 bg-cyan-500/20 rounded-3xl border border-cyan-500/40 text-cyan-400 text-4xl">
+                            <i class="fa-solid fa-key"></i>
+                        </div>
+                        <h3 class="font-orbitron font-extrabold text-xl text-cyan-400">CHÌA KHÓA 1 ĐÃ ĐƯỢC THU THẬP!</h3>
+                        <div class="text-xl font-mono font-bold text-cyan-300 bg-slate-950 p-4 rounded-2xl border border-slate-800 inline-block">
+                            Bạn đã nhận được mật mã là <span class="text-amber-400 font-extrabold">16</span>
+                        </div>
+                        <p class="text-slate-300 text-sm max-w-md mx-auto">
+                            (+100 điểm)
+                        </p>
+                        <div class="pt-2">
+                            <button onclick="gameState.currentRoom=2; renderRoom();" class="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold py-3.5 px-8 rounded-2xl shadow-lg transition">
+                                TIẾP TỤC ĐẾN PHÒNG 2 ➔
+                            </button>
+                        </div>
+                    </div>
+                `;
+            } else {
+                sfx.incorrect();
+                gameState.score = Math.max(0, gameState.score - 20);
+                updateHUD();
+                showToast("Sai rồi! Số hiệu nguyên tử Z = số electron trong nguyên tử trung hòa. (-20đ)", "❌", "error");
+            }
+        }
+
+        let room2Step = 1;
+        function renderRoom2(container) {
+            if (room2Step === 1) {
+                container.innerHTML = `
+                    <div class="space-y-6">
+                        <div class="flex items-center space-x-3 border-b border-slate-800 pb-4">
+                            <div class="bg-cyan-500/20 p-3 rounded-2xl border border-cyan-500/30 text-cyan-400 text-xl">
+                                <i class="fa-solid fa-bolt"></i>
+                            </div>
+                            <div>
+                                <span class="text-xs uppercase font-bold text-cyan-400 tracking-wider">Phòng 2 – Kích Hoạt Electron (Câu 1/3)</span>
+                                <h3 class="font-orbitron font-bold text-lg text-white">CẤU HÌNH ELECTRON CỦA SULFUR</h3>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-950/60 p-4 sm:p-5 rounded-2xl border border-slate-800/80">
+                            <p class="text-slate-200 text-base font-medium mb-4">
+                                Cấu hình electron của nguyên tử Sulfur (Z = 16) là:
+                            </p>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <button onclick="checkRoom2Step1('A')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                    <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">A</span>
+                                    <span class="font-medium text-slate-200">1s² 2s² 2p⁵</span>
+                                </button>
+                                <button onclick="checkRoom2Step1('B')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                    <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">B</span>
+                                    <span class="font-medium text-slate-200">1s² 2s² 2p⁶ 3s²</span>
+                                </button>
+                                <button onclick="checkRoom2Step1('C')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                    <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">C</span>
+                                    <span class="font-medium text-slate-200">1s² 2s² 2p⁶ 3s² 3p⁴</span>
+                                </button>
+                                <button onclick="checkRoom2Step1('D')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                    <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">D</span>
+                                    <span class="font-medium text-slate-200">1s² 2s² 2p⁶ 3s² 3p⁵</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else if (room2Step === 2) {
+                container.innerHTML = `
+                    <div class="space-y-6">
+                        <div class="flex items-center space-x-3 border-b border-slate-800 pb-4">
+                            <div class="bg-cyan-500/20 p-3 rounded-2xl border border-cyan-500/30 text-cyan-400 text-xl">
+                                <i class="fa-solid fa-bolt"></i>
+                            </div>
+                            <div>
+                                <span class="text-xs uppercase font-bold text-cyan-400 tracking-wider">Phòng 2 – Kích Hoạt Electron (Câu 2/3)</span>
+                                <h3 class="font-orbitron font-bold text-lg text-white">ELECTRON HÓA TRỊ</h3>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-950/60 p-4 sm:p-5 rounded-2xl border border-slate-800/80">
+                            <p class="text-slate-200 text-base font-medium mb-4">
+                                Nguyên tử S có bao nhiêu electron hóa trị (lớp ngoài cùng)?
+                            </p>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <button onclick="checkRoom2Step2('A')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                    <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">A</span>
+                                    <span class="font-medium text-slate-200">2 electron</span>
+                                </button>
+                                <button onclick="checkRoom2Step2('B')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                    <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">B</span>
+                                    <span class="font-medium text-slate-200">4 electron</span>
+                                </button>
+                                <button onclick="checkRoom2Step2('C')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                    <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">C</span>
+                                    <span class="font-medium text-slate-200">6 electron</span>
+                                </button>
+                                <button onclick="checkRoom2Step2('D')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                    <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">D</span>
+                                    <span class="font-medium text-slate-200">8 electron</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else if (room2Step === 3) {
+                container.innerHTML = `
+                    <div class="space-y-6">
+                        <div class="flex items-center space-x-3 border-b border-slate-800 pb-4">
+                            <div class="bg-cyan-500/20 p-3 rounded-2xl border border-cyan-500/30 text-cyan-400 text-xl">
+                                <i class="fa-solid fa-bolt"></i>
+                            </div>
+                            <div>
+                                <span class="text-xs uppercase font-bold text-cyan-400 tracking-wider">Phòng 2 – Kích Hoạt Electron (Câu 3/3)</span>
+                                <h3 class="font-orbitron font-bold text-lg text-white">XU HƯỚNG HÓA HỌC</h3>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-950/60 p-4 sm:p-5 rounded-2xl border border-slate-800/80">
+                            <p class="text-slate-200 text-base font-medium mb-4">
+                                Với 6 electron lớp ngoài cùng, Sulfur có xu hướng gì khi tham gia phản ứng hóa học?
+                            </p>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <button onclick="checkRoom2Step3('A')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                    <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">A</span>
+                                    <span class="font-medium text-slate-200">Nhường 6 electron</span>
+                                </button>
+                                <button onclick="checkRoom2Step3('B')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                    <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">B</span>
+                                    <span class="font-medium text-slate-200">Nhận 2 electron (hoặc góp chung)</span>
+                                </button>
+                                <button onclick="checkRoom2Step3('C')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                    <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">C</span>
+                                    <span class="font-medium text-slate-200">Nhận 6 electron</span>
+                                </button>
+                                <button onclick="checkRoom2Step3('D')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                    <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">D</span>
+                                    <span class="font-medium text-slate-200">Không tham gia phản ứng</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function checkRoom2Step1(ans) {
+            if (ans === 'C') {
+                sfx.correct();
+                room2Step = 2;
+                showToast("Chính xác! Tiếp tục câu 2.", "✨", "success");
+                renderRoom();
+            } else {
+                sfx.incorrect();
+                gameState.score = Math.max(0, gameState.score - 20);
+                updateHUD();
+                showToast("Sai cấu hình electron. Tổng số electron là 16. (-20đ)", "❌", "error");
+            }
+        }
+
+        function checkRoom2Step2(ans) {
+            if (ans === 'C') {
+                sfx.correct();
+                room2Step = 3;
+                showToast("Chính xác! Tiếp tục câu 3.", "✨", "success");
+                renderRoom();
+            } else {
+                sfx.incorrect();
+                gameState.score = Math.max(0, gameState.score - 20);
+                updateHUD();
+                showToast("Sai rồi! Nhìn vào phân lớp ngoài cùng 3s² 3p⁴ ta có 2+4 = 6 electron. (-20đ)", "❌", "error");
+            }
+        }
+
+        function checkRoom2Step3(ans) {
+            if (ans === 'B') {
+                sfx.correct();
+                sfx.unlock();
+                gameState.score += 100;
+                gameState.keys[2] = true;
+                gameState.clues[2] = '6';
+
+                const container = document.getElementById('roomContainer');
+                container.innerHTML = `
+                    <div class="text-center space-y-6 py-6 animate-pulse-glow">
+                        <div class="inline-block p-4 bg-cyan-500/20 rounded-3xl border border-cyan-500/40 text-cyan-400 text-4xl">
+                            <i class="fa-solid fa-key"></i>
+                        </div>
+                        <h3 class="font-orbitron font-extrabold text-xl text-cyan-400">CHÌA KHÓA 2 ĐÃ ĐƯỢC THU THẬP!</h3>
+                        <div class="text-xl font-mono font-bold text-cyan-300 bg-slate-950 p-4 rounded-2xl border border-slate-800 inline-block">
+                            Bạn đã nhận được mật mã là <span class="text-amber-400 font-extrabold">6</span>
+                        </div>
+                        <p class="text-slate-300 text-sm max-w-md mx-auto">
+                            (+100 điểm)
+                        </p>
+                        <div class="pt-2">
+                            <button onclick="gameState.currentRoom=3; room2Step=1; renderRoom();" class="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold py-3.5 px-8 rounded-2xl shadow-lg transition">
+                                TIẾP TỤC ĐẾN PHÒNG 3 ➔
+                            </button>
+                        </div>
+                    </div>
+                `;
+            } else {
+                sfx.incorrect();
+                gameState.score = Math.max(0, gameState.score - 20);
+                updateHUD();
+                showToast("Sai rồi! Có 6e lớp ngoài cùng, S cần thêm 2e để đạt cấu hình khí hiếm bền vững. (-20đ)", "❌", "error");
+            }
+        }
+
+        let room3Step = 1;
+        function renderRoom3(container) {
+            if (room3Step === 1) {
+                container.innerHTML = `
+                    <div class="space-y-6">
+                        <div class="flex items-center space-x-3 border-b border-slate-800 pb-4">
+                            <div class="bg-cyan-500/20 p-3 rounded-2xl border border-cyan-500/30 text-cyan-400 text-xl">
+                                <i class="fa-solid fa-flask"></i>
+                            </div>
+                            <div>
+                                <span class="text-xs uppercase font-bold text-cyan-400 tracking-wider">Phòng 3 – Phòng Phản Ứng (Phần 1/2)</span>
+                                <h3 class="font-orbitron font-bold text-lg text-white">VAI TRÒ CỦA SULFUR VỚI KIM LOẠI</h3>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-950/60 p-4 sm:p-5 rounded-2xl border border-slate-800/80">
+                            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl text-center mb-4">
+                                <span class="font-mono font-bold text-cyan-400 text-lg">Fe + S → FeS</span>
+                            </div>
+                            <p class="text-slate-200 text-base font-medium mb-4">
+                                Trong phản ứng trên, Sulfur (S) đóng vai trò là gì?
+                            </p>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <button onclick="checkRoom3Step1('A')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                    <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">A</span>
+                                    <span class="font-medium text-slate-200">Chất khử</span>
+                                </button>
+                                <button onclick="checkRoom3Step1('B')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                    <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">B</span>
+                                    <span class="font-medium text-slate-200">Chất oxi hóa</span>
+                                </button>
+                                <button onclick="checkRoom3Step1('C')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                    <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">C</span>
+                                    <span class="font-medium text-slate-200">Acid</span>
+                                </button>
+                                <button onclick="checkRoom3Step1('D')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                    <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">D</span>
+                                    <span class="font-medium text-slate-200">Base</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else if (room3Step === 2) {
+                container.innerHTML = `
+                    <div class="space-y-6">
+                        <div class="flex items-center space-x-3 border-b border-slate-800 pb-4">
+                            <div class="bg-cyan-500/20 p-3 rounded-2xl border border-cyan-500/30 text-cyan-400 text-xl">
+                                <i class="fa-solid fa-flask"></i>
+                            </div>
+                            <div>
+                                <span class="text-xs uppercase font-bold text-cyan-400 tracking-wider">Phòng 3 – Phòng Phản Ứng (Phần 2/2)</span>
+                                <h3 class="font-orbitron font-bold text-lg text-white">VAI TRÒ CỦA SULFUR VỚI OXYGEN</h3>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-950/60 p-4 sm:p-5 rounded-2xl border border-slate-800/80">
+                            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl text-center mb-4">
+                                <span class="font-mono font-bold text-cyan-400 text-lg">S + O₂ → SO₂</span>
+                            </div>
+                            <p class="text-slate-200 text-base font-medium mb-4">
+                                Trong phản ứng này, Sulfur (S) đóng vai trò là gì?
+                            </p>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <button onclick="checkRoom3Step2('A')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                    <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">A</span>
+                                    <span class="font-medium text-slate-200">Chất oxi hóa</span>
+                                </button>
+                                <button onclick="checkRoom3Step2('B')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                    <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">B</span>
+                                    <span class="font-medium text-slate-200">Chất khử</span>
+                                </button>
+                                <button onclick="checkRoom3Step2('C')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                    <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">C</span>
+                                    <span class="font-medium text-slate-200">Acid</span>
+                                </button>
+                                <button onclick="checkRoom3Step2('D')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-4 rounded-xl transition flex items-center gap-3 group">
+                                    <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-sm text-cyan-400 transition">D</span>
+                                    <span class="font-medium text-slate-200">Base</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function checkRoom3Step1(ans) {
+            if (ans === 'B') {
+                sfx.correct();
+                room3Step = 2;
+                showToast("Chính xác! S nhận e từ Fe nên thể hiện tính oxi hóa.", "✨", "success");
+                renderRoom();
+            } else {
+                sfx.incorrect();
+                gameState.score = Math.max(0, gameState.score - 20);
+                updateHUD();
+                showToast("Sai rồi! Trong phản ứng với kim loại, S thể hiện tính oxi hóa (số oxi hóa từ 0 xuống -2). (-20đ)", "❌", "error");
+            }
+        }
+
+        function checkRoom3Step2(ans) {
+            if (ans === 'B') {
+                sfx.correct();
+                sfx.unlock();
+                gameState.score += 100;
+                gameState.keys[3] = true;
+                gameState.clues[3] = '2';
+                
+                const container = document.getElementById('roomContainer');
+                container.innerHTML = `
+                    <div class="text-center space-y-6 py-4 animate-pulse-glow">
+                        <div class="inline-block p-4 bg-amber-500/20 rounded-3xl border border-amber-500/40 text-amber-400 text-4xl">
+                            <i class="fa-solid fa-lightbulb"></i>
+                        </div>
+                        <h3 class="font-orbitron font-extrabold text-xl text-amber-400">PHÁT HIỆN ĐẶC BIỆT!</h3>
+                        <p class="text-slate-200 text-base max-w-md mx-auto">
+                            S có thể thể hiện tính oxi hóa và tính khử.
+                        </p>
+                        <div class="text-xl font-mono font-bold text-cyan-300 bg-slate-950 p-4 rounded-2xl border border-slate-800 inline-block">
+                            Bạn đã nhận được mật mã là <span class="text-amber-400 font-extrabold">2</span>
+                        </div>
+                        <div class="pt-2">
+                            <button onclick="gameState.currentRoom=4; room3Step=1; renderRoom();" class="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold py-3.5 px-8 rounded-2xl shadow-lg transition">
+                                TIẾP TỤC ĐẾN PHÒNG 4 (KÉT SẮT) ➔
+                            </button>
+                        </div>
+                    </div>
+                `;
+            } else {
+                sfx.incorrect();
+                gameState.score = Math.max(0, gameState.score - 20);
+                updateHUD();
+                showToast("Sai rồi! Tác dụng với O₂, S bị oxi hóa lên +4 nên S đóng vai trò là chất khử. (-20đ)", "❌", "error");
+            }
+        }
+
+        function renderRoom4(container) {
+            container.innerHTML = `
+                <div class="space-y-6">
+                    <div class="flex items-center space-x-3 border-b border-slate-800 pb-4">
+                        <div class="bg-rose-500/20 p-3 rounded-2xl border border-rose-500/30 text-rose-400 text-xl">
+                            <i class="fa-solid fa-vault"></i>
+                        </div>
+                        <div>
+                            <span class="text-xs uppercase font-bold text-rose-400 tracking-wider">Phòng 4 – Két Sắt Thoát Hiểm</span>
+                            <h3 class="font-orbitron font-bold text-lg text-white">THỬ THÁCH KÉT SẮT CUỐI CÙNG</h3>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-950/60 p-4 sm:p-5 rounded-2xl border border-slate-800/80 space-y-4">
+                        <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl text-xs sm:text-sm font-mono text-slate-300 space-y-1">
+                            <div>(1) Fe + S → FeS</div>
+                            <div>(2) S + O₂ → SO₂</div>
+                            <div>(3) H₂ + S → H₂S</div>
+                        </div>
+
+                        <p class="text-slate-200 text-sm font-medium">
+                            Có bao nhiêu phản ứng sulfur đóng vai trò là chất oxi hóa?
+                        </p>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="room4QuizGrid">
+                            <button onclick="checkRoom4Quiz('A')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-3.5 rounded-xl transition flex items-center gap-3 group">
+                                <span class="w-7 h-7 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-xs text-cyan-400 transition">A</span>
+                                <span class="font-medium text-slate-200 text-sm">1 phản ứng</span>
+                            </button>
+                            <button onclick="checkRoom4Quiz('B')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-3.5 rounded-xl transition flex items-center gap-3 group">
+                                <span class="w-7 h-7 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-xs text-cyan-400 transition">B</span>
+                                <span class="font-medium text-slate-200 text-sm">2 phản ứng ((1) và (3))</span>
+                            </button>
+                            <button onclick="checkRoom4Quiz('C')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-3.5 rounded-xl transition flex items-center gap-3 group">
+                                <span class="w-7 h-7 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-xs text-cyan-400 transition">C</span>
+                                <span class="font-medium text-slate-200 text-sm">3 phản ứng</span>
+                            </button>
+                            <button onclick="checkRoom4Quiz('D')" class="text-left bg-slate-900 hover:bg-slate-800 border border-slate-700 p-3.5 rounded-xl transition flex items-center gap-3 group">
+                                <span class="w-7 h-7 rounded-lg bg-slate-800 group-hover:bg-cyan-500 group-hover:text-white flex items-center justify-center font-bold text-xs text-cyan-400 transition">D</span>
+                                <span class="font-medium text-slate-200 text-sm">0 phản ứng</span>
+                            </button>
+                        </div>
+
+                        <div id="safeInputContainer" class="hidden pt-3 border-t border-slate-800 space-y-3">
+                            <div class="text-emerald-400 font-semibold text-xs flex items-center gap-1.5">
+                                <i class="fa-solid fa-circle-check"></i> Chìa khóa cuối cùng (2) đã nhận! Hãy nhập mật mã mở két (kết hợp các số từ các phòng trước).
+                            </div>
+                            <div class="flex gap-2">
+                                <input type="text" id="safePasswordInput" placeholder="Nhập mật khẩu mở két" 
+                                    class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white font-mono text-center text-lg placeholder-slate-500 focus:outline-none focus:border-cyan-500">
+                                <button onclick="verifySafePassword()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-6 py-3 rounded-xl shadow-lg transition">
+                                    MỞ KÉT 🔓
+                                </button>
+                            </div>
+                            <div class="text-center pt-2">
+                                <button onclick="bypassSafePassword()" class="text-xs text-amber-400 hover:underline">
+                                    Quên chìa khóa / Bỏ qua (Trừ 30đ)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function checkRoom4Quiz(ans) {
+            if (ans === 'B') {
+                sfx.correct();
+                sfx.unlock();
+                gameState.keys.final = true;
+                gameState.clues[4] = '2';
+                gameState.score += 100;
+                updateHUD();
+                showToast("Chính xác! S đóng vai trò chất oxi hóa trong (1) với Fe và (3) với H₂. Nhận chìa khóa cuối cùng: 2.", "✨", "success");
+                const safeContainer = document.getElementById('safeInputContainer');
+                if (safeContainer) {
+                    safeContainer.classList.remove('hidden');
+                }
+                const quizGrid = document.getElementById('room4QuizGrid');
+                if (quizGrid) {
+                    quizGrid.classList.add('opacity-50', 'pointer-events-none');
+                }
+            } else {
+                sfx.incorrect();
+                gameState.score = Math.max(0, gameState.score - 20);
+                updateHUD();
+                showToast("Sai rồi! S tác dụng với kim loại (Fe) và hiđro (H₂) thì S là chất oxi hóa (2 phản ứng). (-20đ)", "❌", "error");
+            }
+        }
+
+        function verifySafePassword() {
+            const inputVal = document.getElementById('safePasswordInput').value.trim();
+            const cleanInput = inputVal.replace(/\s+/g, '');
+
+            if (cleanInput === '16622') {
+                triggerVictory();
+            } else {
+                sfx.incorrect();
+                gameState.score = Math.max(0, gameState.score - 30);
+                updateHUD();
+                showToast("Mật mã két sắt chưa đúng! Hãy kiểm tra lại các chìa khóa đã thu thập. (-30đ)", "❌", "error");
+            }
+        }
+
+        function bypassSafePassword() {
+            sfx.correct();
+            gameState.score = Math.max(0, gameState.score - 30);
+            updateHUD();
+            showToast("Đã bỏ qua mật khẩu! (-30đ)", "⚠️", "info");
+            triggerVictory();
+        }
+
+        function triggerVictory() {
+            sfx.correct();
+            sfx.victory();
+            gameState.score += 200;
+            updateHUD();
+
+            const container = document.getElementById('roomContainer');
+            container.innerHTML = `
+                <div class="text-center space-y-6 py-6 animate-pulse-glow">
+                    <div class="inline-block p-5 bg-gradient-to-br from-amber-500/20 to-emerald-500/20 rounded-3xl border border-emerald-500/40 text-emerald-400 text-5xl">
+                        <i class="fa-solid fa-trophy"></i>
+                    </div>
+                    <div class="space-y-2">
+                        <h2 class="font-orbitron font-extrabold text-2xl sm:text-3xl text-white">🚪 CỬA THOÁT ĐÃ MỞ!</h2>
+                        <p class="text-xl font-bold text-amber-400">🎉 CHÚC MỪNG ĐỘI ${gameState.team.toUpperCase()} & ${gameState.name}!</p>
+                    </div>
+
+                    <div class="bg-slate-950 p-6 rounded-3xl border border-slate-800 max-w-md mx-auto space-y-3 text-left">
+                        <div class="flex justify-between text-sm">
+                            <span class="text-slate-400">Học sinh:</span>
+                            <span class="font-bold text-white">${gameState.name}</span>
+                        </div>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-slate-400">Đội chơi:</span>
+                            <span class="font-bold text-cyan-400">${gameState.team}</span>
+                        </div>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-slate-400">Tổng điểm:</span>
+                            <span class="font-bold text-amber-400">${gameState.score} điểm</span>
+                        </div>
+                        <div class="flex justify-between text-sm">
+                            <span class="text-slate-400">Trạng thái:</span>
+                            <span class="font-bold text-emerald-400">Thoát hiểm thành công!</span>
+                        </div>
+                    </div>
+
+                    <div class="pt-2">
+                        <button onclick="location.reload()" class="bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-6 rounded-2xl border border-slate-700 transition">
+                            🔄 Chơi lại từ đầu
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function openDashboard() {
+            document.getElementById('dashboardModal').classList.remove('hidden');
+            fetchRealtimeStudentsData();
+        }
+        function closeDashboard() {
+            document.getElementById('dashboardModal').classList.add('hidden');
+        }
+
+        async function teacherAction(action) {
+            if (!db) {
+                showToast("Firebase chưa kết nối. Vui lòng tải lại trang.", "⚠️", "error");
+                return;
+            }
+            try {
+                const mod = window.firebaseAppModules;
+                const sessionRef = mod.doc(db, 'artifacts', appId, 'public', 'data', 'sessions', gameState.sessionId);
+
+                let data = {
+                    sessionId: gameState.sessionId,
+                    updatedAt: new Date().toISOString()
+                };
+
+                if (action === 'start') data.status = 'playing';
+                else if (action === 'pause') data.status = 'paused';
+                else if (action === 'resume') data.status = 'playing';
+                else if (action === 'end') data.status = 'ended';
+                else if (action === 'restart') {
+                    // CHƠI LẠI: không dùng confirm() để tránh bị trình duyệt chặn.
+                    // Tạo vòng mới ngay khi GV bấm nút.
+                    currentRoundId = 'round_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+                    data.status = 'waiting';
+                    data.roundId = currentRoundId;
+                    data.restartAt = new Date().toISOString();
+                    data.forceReset = true;
+                } else {
+                    return;
+                }
+
+                await mod.setDoc(sessionRef, data, { merge: true });
+
+                if (action === 'restart') {
+                    // Cập nhật Dashboard ngay lập tức.
+                    await fetchRealtimeStudentsData();
+                    // Gửi thêm lần nữa sau 200ms để các tab HS nhận sự kiện chắc chắn.
+                    setTimeout(() => {
+                        mod.setDoc(sessionRef, {
+                            sessionId: gameState.sessionId,
+                            status: 'waiting',
+                            roundId: currentRoundId,
+                            restartAt: new Date().toISOString(),
+                            updatedAt: new Date().toISOString(),
+                            forceReset: true
+                        }, { merge: true }).catch(err => console.error("Retry restart write:", err));
+                    }, 200);
+                }
+
+                showToast(
+                    action === 'restart'
+                        ? "ĐÃ TẠO LƯỢT MỚI – TẤT CẢ HS VỀ PHÒNG CHỜ"
+                        : "Đã gửi lệnh cho học sinh!",
+                    action === 'restart' ? "🔄" : "📢",
+                    "success"
+                );
+            } catch (e) {
+                console.error("TEACHER ACTION ERROR:", e);
+                showToast("Không gửi được lệnh. Kiểm tra Firebase/Firestore.", "❌", "error");
+            }
+        }
+
+        // Đảm bảo nút GV luôn hoạt động kể cả khi trình duyệt chặn inline onclick.
+        document.addEventListener('DOMContentLoaded', () => {
+            const bindings = [
+                ['btnTeacherStart', 'start'],
+                ['btnTeacherPause', 'pause'],
+                ['btnTeacherResume', 'resume'],
+                ['btnTeacherRestart', 'restart'],
+                ['btnTeacherEnd', 'end']
+            ];
+            bindings.forEach(([id, action]) => {
+                const btn = document.getElementById(id);
+                if (btn && !btn.dataset.boundDirect) {
+                    btn.dataset.boundDirect = '1';
+                    btn.addEventListener('click', (ev) => {
+                        ev.preventDefault();
+                        teacherAction(action);
+                    });
+                }
+            });
+        });
+
+        async function fetchRealtimeStudentsData() {
+            if (!db) {
+                renderDashboardStats([]);
+                return;
+            }
+
+            const mod = window.firebaseAppModules;
+            const sessionRef = mod.doc(db, 'artifacts', appId, 'public', 'data', 'sessions', gameState.sessionId);
+
+            try {
+                const sessionSnap = await mod.getDoc(sessionRef);
+                if (sessionSnap.exists()) {
+                    const sessionData = sessionSnap.data();
+                    if (sessionData.roundId) {
+                        currentRoundId = sessionData.roundId;
+                    } else {
+                        // Tạo một vòng mới khi session cũ chưa có roundId,
+                        // để các hồ sơ legacy (không có roundId) không tiếp tục hiện ở Dashboard.
+                        currentRoundId = 'round_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+                        await mod.setDoc(sessionRef, {
+                            sessionId: gameState.sessionId,
+                            status: sessionData.status || 'waiting',
+                            roundId: currentRoundId,
+                            updatedAt: new Date().toISOString()
+                        }, { merge: true });
+                    }
+                } else {
+                    currentRoundId = 'round_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+                    await mod.setDoc(sessionRef, {
+                        sessionId: gameState.sessionId,
+                        status: 'waiting',
+                        roundId: currentRoundId,
+                        createdAt: new Date().toISOString()
+                    }, { merge: true });
+                }
+            } catch (e) {
+                console.error("Read session error:", e);
+            }
+
+            const studentsCol = mod.collection(
+                db, 'artifacts', appId, 'public', 'data',
+                `session_${gameState.sessionId}_students`
+            );
+
+            if (studentsUnsubscribe) studentsUnsubscribe();
+
+            studentsUnsubscribe = mod.onSnapshot(studentsCol, (snapshot) => {
+                const students = [];
+                snapshot.forEach(studentDoc => {
+                    const data = studentDoc.data();
+                    if ((data.roundId || 'initial') === currentRoundId) {
+                        students.push(data);
+                    }
+                });
+                renderDashboardStats(students);
+            }, (error) => {
+                console.error("Dashboard students listener error:", error);
+            });
+        }
+
+        function renderDashboardStats(students) {
+            const total = students.length;
+            let volcanoCount = 0;
+            let matchCount = 0;
+            let rubberCount = 0;
+            let railCount = 0;
+
+            const teamScores = {
+                'Núi lửa': { score: 0, count: 0 },
+                'Diêm': { score: 0, count: 0 },
+                'Cao su': { score: 0, count: 0 },
+                'Đường sắt': { score: 0, count: 0 }
+            };
+
+            students.forEach(st => {
+                if (st.team === 'Núi lửa') volcanoCount++;
+                else if (st.team === 'Diêm') matchCount++;
+                else if (st.team === 'Cao su') rubberCount++;
+                else if (st.team === 'Đường sắt') railCount++;
+
+                if (teamScores[st.team]) {
+                    teamScores[st.team].score += (st.score || 0);
+                    teamScores[st.team].count += 1;
+                }
+            });
+
+            document.getElementById('statTotalStudents').innerText = total;
+            document.getElementById('statTeamVolcano').innerText = `${volcanoCount} HS`;
+            document.getElementById('statTeamMatch').innerText = `${matchCount} HS`;
+            document.getElementById('statTeamRubber').innerText = `${rubberCount} HS`;
+            document.getElementById('statTeamRail').innerText = `${railCount} HS`;
+
+            const sortedTeams = Object.keys(teamScores).map(team => ({
+                team,
+                score: teamScores[team].score,
+                avg: teamScores[team].count ? Math.round(teamScores[team].score / teamScores[team].count) : 0
+            })).sort((a, b) => b.score - a.score);
+
+            const teamContainer = document.getElementById('teamRankingsContainer');
+            teamContainer.innerHTML = sortedTeams.map((t, idx) => `
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between text-sm">
+                    <span class="font-semibold text-white flex items-center gap-2">
+                        ${idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '🏅'} ${t.team}
+                    </span>
+                    <span class="text-amber-400 font-bold">${t.score} điểm (Trung bình: ${t.avg})</span>
+                </div>
+            `).join('');
+
+            const sortedStudents = [...students].sort((a, b) => (b.score || 0) - (a.score || 0)).slice(0, 5);
+            const topContainer = document.getElementById('topStudentsContainer');
+            if (sortedStudents.length === 0) {
+                topContainer.innerHTML = `<div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-center text-slate-400 text-xs">Chưa có học sinh nào.</div>`;
+            } else {
+                topContainer.innerHTML = sortedStudents.map((st, idx) => `
+                    <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
+                        <span class="font-medium text-white">${idx + 1}. ${st.name} <span class="text-slate-400">(${st.team})</span></span>
+                        <span class="text-amber-400 font-bold">Phòng ${st.currentRoom} - ${st.score}đ</span>
+                    </div>
+                `).join('');
+            }
+        }
+    </script>
+
+</body>
+</html>
