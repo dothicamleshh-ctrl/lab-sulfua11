@@ -51,6 +51,31 @@
         }
     </style>
 </head>
+    <style>
+@media (hover: none) and (pointer: coarse) {
+  button[onclick^="checkRoom"] {
+    background-color: #0f172a !important;
+  }
+
+  button[onclick^="checkRoom"]:hover,
+  button[onclick^="checkRoom"]:active {
+    background-color: #0f172a !important;
+  }
+
+  button[onclick^="checkRoom"] > span:first-child {
+    background-color: #1e293b !important;
+    color: #22d3ee !important;
+    transform: none !important;
+  }
+
+  button[onclick^="checkRoom"]:hover > span:first-child,
+  button[onclick^="checkRoom"]:active > span:first-child {
+    background-color: #1e293b !important;
+    color: #22d3ee !important;
+    transform: none !important;
+  }
+}
+</style>
 <body class="h-full flex flex-col selection:bg-cyan-500 selection:text-white overflow-x-hidden">
 
     <script type="module">
