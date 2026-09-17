@@ -1663,15 +1663,17 @@
             if (ans === 'C') {
                 showAnswerEffect(true, '+100 điểm', 'Cấu hình electron đã chính xác!');
                 sfx.correct();
+                gameState.score += 100;
+                updateHUD();
                 room2Step = 2;
-                showToast("Chính xác! Tiếp tục câu 2.", "✨", "success");
+                showToast("Chính xác! +100 điểm. Tiếp tục câu 2.", "✨", "success");
                 renderRoom();
             } else {
                 showAnswerEffect(false, '-20 điểm', 'CẦN CỐ GẮNG!');
                 sfx.incorrect();
-                gameState.score = Math.max(0, gameState.score - 20);
+                gameState.score -= 20;
                 updateHUD();
-                showToast("CẦN CỐ GẮNG! Hãy thử lại nhé. (-20đ)", "💪", "error");
+                showToast("CẦN CỐ GẮNG! (-20đ)", "💪", "error");
             }
         }
 
@@ -1679,15 +1681,17 @@
             if (ans === 'C') {
                 showAnswerEffect(true, '+100 điểm', 'Phân lớp ngoài cùng đã được xác định!');
                 sfx.correct();
+                gameState.score += 100;
+                updateHUD();
                 room2Step = 3;
-                showToast("Chính xác! Tiếp tục câu 3.", "✨", "success");
+                showToast("Chính xác! +100 điểm. Tiếp tục câu 3.", "✨", "success");
                 renderRoom();
             } else {
                 showAnswerEffect(false, '-20 điểm', 'CẦN CỐ GẮNG!');
                 sfx.incorrect();
-                gameState.score = Math.max(0, gameState.score - 20);
+                gameState.score -= 20;
                 updateHUD();
-                showToast("CẦN CỐ GẮNG! Hãy thử lại nhé. (-20đ)", "💪", "error");
+                showToast("CẦN CỐ GẮNG! (-20đ)", "💪", "error");
             }
         }
 
@@ -1723,7 +1727,7 @@
             } else {
                 showAnswerEffect(false, '-20 điểm', 'CẦN CỐ GẮNG!');
                 sfx.incorrect();
-                gameState.score = Math.max(0, gameState.score - 20);
+                gameState.score -= 20;
                 updateHUD();
                 showToast("CẦN CỐ GẮNG! Hãy thử lại nhé. (-20đ)", "💪", "error");
             }
@@ -1821,15 +1825,17 @@
             if (ans === 'B') {
                 showAnswerEffect(true, '+100 điểm', 'Đúng vai trò oxi hóa của sulfur!');
                 sfx.correct();
+                gameState.score += 100;
+                updateHUD();
                 room3Step = 2;
-                showToast("Chính xác! S nhận e từ Fe nên thể hiện tính oxi hóa.", "✨", "success");
+                showToast("Chính xác! +100 điểm. S nhận e từ Fe nên thể hiện tính oxi hóa.", "✨", "success");
                 renderRoom();
             } else {
                 showAnswerEffect(false, '-20 điểm', 'CẦN CỐ GẮNG!');
                 sfx.incorrect();
-                gameState.score = Math.max(0, gameState.score - 20);
+                gameState.score -= 20;
                 updateHUD();
-                showToast("CẦN CỐ GẮNG! Hãy thử lại nhé. (-20đ)", "💪", "error");
+                showToast("CẦN CỐ GẮNG! (-20đ)", "💪", "error");
             }
         }
 
@@ -1876,7 +1882,7 @@
             } else {
                 showAnswerEffect(false, '-20 điểm', 'CẦN CỐ GẮNG!');
                 sfx.incorrect();
-                gameState.score = Math.max(0, gameState.score - 20);
+                gameState.score -= 20;
                 updateHUD();
                 showToast("CẦN CỐ GẮNG! Hãy thử lại nhé. (-20đ)", "💪", "error");
             }
@@ -2031,7 +2037,7 @@
             } else {
                 showAnswerEffect(false, '-20 điểm', 'CẦN CỐ GẮNG!');
                 sfx.incorrect();
-                gameState.score = Math.max(0, gameState.score - 20);
+                gameState.score -= 20;
                 updateHUD();
                 showToast("CẦN CỐ GẮNG! Hãy thử lại nhé. (-20đ)", "💪", "error");
             }
