@@ -950,6 +950,7 @@
             completed: false,
             elapsedSeconds: null,
             finishedAt: null,
+            active: false,
             status: 'waiting'
         };
 
@@ -957,6 +958,7 @@
         let studentsUnsubscribe = null;
         let sessionUnsubscribe = null;
         let currentRoundId = 'initial';
+        let lastHandledRestartAt = '';
 
         window.addEventListener('firebase-loaded', async () => {
             const cleanUrl = window.location.href.split('#')[0];
@@ -1233,7 +1235,10 @@
             document.getElementById('currentModalSessionId').innerText = gameState.sessionId;
             initShareUrl(window.location.href.split('#')[0].split('?')[0]);
 
-            await saveStudentDataToFirebase();
+            // KHÔNG tạo hồ sơ Dashboard ở trạng thái phòng chờ.
+            // Hồ sơ chỉ được tạo khi lượt mới thực sự bắt đầu.
+            gameState.active = false;
+            gameState.status = 'waiting';
             listenToSessionStatus();
 
             document.getElementById('screen-login').classList.add('hidden');
@@ -1242,10 +1247,23 @@
         }
 
         async function saveStudentDataToFirebase() {
-            if (!db) return;
+            if (!db || !gameState.active) return;
             try {
                 const mod = window.firebaseAppModules;
-                const studentRef = mod.doc(db, 'artifacts', appId, 'public', 'data', `session_${gameState.sessionId}_students`, gameState.playerId);
+                const sessionRef = mod.doc(db, 'artifacts', appId, 'public', 'data', 'sessions', gameState.sessionId);
+
+                // Luôn kiểm tra trạng thái/roundId trên Firestore trước khi ghi.
+                // Điều này chặn tab HS cũ ghi ngược dữ liệu sau khi GV bấm Chơi lại.
+                const sessionSnap = await mod.getDoc(sessionRef);
+                if (!sessionSnap.exists()) return;
+                const sessionData = sessionSnap.data();
+                if (sessionData.roundId !== currentRoundId) return;
+                if (sessionData.status !== 'playing' && sessionData.status !== 'paused') return;
+
+                const studentRef = mod.doc(
+                    db, 'artifacts', appId, 'public', 'data',
+                    `session_${gameState.sessionId}_students`, gameState.playerId
+                );
                 await mod.setDoc(studentRef, {
                     playerId: gameState.playerId,
                     name: gameState.name,
@@ -1255,10 +1273,12 @@
                     keys: gameState.keys,
                     clues: gameState.clues,
                     roundId: currentRoundId,
+                    activeRound: true,
                     safeOpened: !!gameState.safeOpened,
                     completed: !!gameState.completed,
                     elapsedSeconds: gameState.elapsedSeconds,
                     finishedAt: gameState.finishedAt,
+                    joinedAt: gameState.joinedAt || new Date().toISOString(),
                     updatedAt: new Date().toISOString()
                 }, { merge: true });
             } catch(e) {
@@ -1289,7 +1309,8 @@
 
                 const data = docSnap.data();
                 const newRoundId = data.roundId || 'initial';
-                const mustReset = data.forceReset === true && data.restartAt;
+                const mustReset = data.forceReset === true && data.restartAt && data.restartAt !== lastHandledRestartAt;
+                if (mustReset) lastHandledRestartAt = data.restartAt;
 
                 if (currentRoundId !== newRoundId || mustReset) {
                     currentRoundId = newRoundId;
@@ -1304,6 +1325,8 @@
                         gameState.completed = false;
                         gameState.elapsedSeconds = null;
                         gameState.finishedAt = null;
+                        gameState.joinedAt = null;
+                        gameState.active = false;
                         gameState.status = 'waiting';
                         room3Step = 1;
                         room4Step = 1;
@@ -1312,8 +1335,10 @@
                         document.getElementById('screen-game').classList.add('hidden');
                         document.getElementById('screen-game').classList.remove('flex');
                         document.getElementById('screen-waiting').classList.remove('hidden');
+
+                        // KHÔNG lưu lại hồ sơ HS cũ ở đây.
+                        // Chỉ khi HS thực sự bắt đầu lượt mới, updateHUD() mới tạo lại document.
                         showToast("Lượt chơi mới đã sẵn sàng!", "🔄", "info");
-                        saveStudentDataToFirebase();
                     }
                 }
 
@@ -1330,6 +1355,9 @@
         }
 
         function startGameplay() {
+            gameState.active = true;
+            gameState.status = 'playing';
+            if (!gameState.joinedAt) gameState.joinedAt = new Date().toISOString();
             document.getElementById('screen-waiting').classList.add('hidden');
             document.getElementById('screen-login').classList.add('hidden');
             document.getElementById('screen-game').classList.remove('hidden');
@@ -2059,6 +2087,25 @@
             document.getElementById('dashboardModal').classList.add('hidden');
         }
 
+        async function clearAllStudentDocs(mod) {
+            const studentsCol = mod.collection(
+                db, 'artifacts', appId, 'public', 'data',
+                `session_${gameState.sessionId}_students`
+            );
+
+            // Xóa theo nhiều lượt cho tới khi collection thực sự rỗng.
+            // Firestore có thể trả snapshot cũ trong lúc nhiều tab đang ghi.
+            for (let pass = 0; pass < 5; pass++) {
+                const snap = await mod.getDocs(studentsCol);
+                if (snap.empty) return true;
+                await Promise.all(snap.docs.map(d => mod.deleteDoc(d.ref)));
+                await new Promise(r => setTimeout(r, 120));
+            }
+
+            const verify = await mod.getDocs(studentsCol);
+            return verify.empty;
+        }
+
         async function teacherAction(action) {
             if (!db) {
                 showToast("Firebase chưa kết nối. Vui lòng tải lại trang.", "⚠️", "error");
@@ -2078,13 +2125,29 @@
                 else if (action === 'resume') data.status = 'playing';
                 else if (action === 'end') data.status = 'ended';
                 else if (action === 'restart') {
-                    // CHƠI LẠI: không dùng confirm() để tránh bị trình duyệt chặn.
-                    // Tạo vòng mới ngay khi GV bấm nút.
+                    gameState.active = false;
+                    gameState.status = 'waiting';
+                    // CHƠI LẠI TRIỆT ĐỂ:
+                    // 1) Dừng listener Dashboard để không giữ danh sách cũ.
+                    // 2) Xóa TOÀN BỘ document HS của session, kể cả dữ liệu không có roundId.
+                    // 3) Kiểm tra lại collection đã rỗng.
+                    // 4) Tạo roundId mới.
+                    // 5) Các tab HS KHÔNG được tự save lại hồ sơ cũ khi nhận lệnh reset.
+                    if (studentsUnsubscribe) {
+                        studentsUnsubscribe();
+                        studentsUnsubscribe = null;
+                    }
+                    renderDashboardStats([]);
+
+                    const cleared = await clearAllStudentDocs(mod);
+                    if (!cleared) throw new Error('Không thể làm rỗng danh sách học sinh cũ.');
+
                     currentRoundId = 'round_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
                     data.status = 'waiting';
                     data.roundId = currentRoundId;
                     data.restartAt = new Date().toISOString();
                     data.forceReset = true;
+
                 } else {
                     return;
                 }
@@ -2092,24 +2155,18 @@
                 await mod.setDoc(sessionRef, data, { merge: true });
 
                 if (action === 'restart') {
-                    // Cập nhật Dashboard ngay lập tức.
+                    // Sau khi session chuyển sang WAITING, mọi tab HS cũ bị chặn ghi.
+                    // Xóa thêm một vòng nữa để dọn sạch mọi write cũ đã bay tới muộn.
+                    const clearedAgain = await clearAllStudentDocs(mod);
+                    if (!clearedAgain) throw new Error('Vẫn còn dữ liệu HS cũ sau khi reset.');
+
+                    renderDashboardStats([]);
                     await fetchRealtimeStudentsData();
-                    // Gửi thêm lần nữa sau 200ms để các tab HS nhận sự kiện chắc chắn.
-                    setTimeout(() => {
-                        mod.setDoc(sessionRef, {
-                            sessionId: gameState.sessionId,
-                            status: 'waiting',
-                            roundId: currentRoundId,
-                            restartAt: new Date().toISOString(),
-                            updatedAt: new Date().toISOString(),
-                            forceReset: true
-                        }, { merge: true }).catch(err => console.error("Retry restart write:", err));
-                    }, 200);
                 }
 
                 showToast(
                     action === 'restart'
-                        ? "ĐÃ TẠO LƯỢT MỚI – TẤT CẢ HS VỀ PHÒNG CHỜ"
+                        ? "ĐÃ XÓA KẾT QUẢ CŨ – TẠO LƯỢT MỚI, HS VỀ PHÒNG CHỜ"
                         : "Đã gửi lệnh cho học sinh!",
                     action === 'restart' ? "🔄" : "📢",
                     "success"
@@ -2191,7 +2248,7 @@
                 const students = [];
                 snapshot.forEach(studentDoc => {
                     const data = studentDoc.data();
-                    if ((data.roundId || 'initial') === currentRoundId) {
+                    if ((data.roundId || 'initial') === currentRoundId && data.activeRound === true) {
                         students.push(data);
                     }
                 });
